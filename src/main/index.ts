@@ -17,6 +17,8 @@ function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1260,
     height: 900,
+    minWidth: 1260,
+    minHeight: 700,
     show: false,
     autoHideMenuBar: true,
     ...(process.platform === 'win32' ? { icon } : {}),
