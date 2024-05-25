@@ -1,58 +1,56 @@
 /// <reference types="vite-plugin-svgr/client" />
 
-// TODO:
-// - >100% progress
-
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import ModList from './ModList';
 import LocalMod from '@preload/LocalMod';
 import { Mod } from './models/mod-io/Mod';
 import ModIOInteraction from './mod-io-interaction';
 import { Config } from '@preload/Config';
 import { BatchItem } from './models/BatchItem';
-import { ThemeProvider, createTheme } from '@mui/material/styles';
 import {
   Avatar,
   Box,
   Button,
   ButtonGroup,
+  CardHeader,
+  Checkbox,
+  Chip,
   CssBaseline,
   Divider,
+  Grid,
   LinearProgress,
-  List,
-  ListItem,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
+  Paper,
   Snackbar,
   Stack,
-  SvgIcon,
-  TextField,
-  ToggleButton,
-  ToggleButtonGroup,
-  Toolbar,
+  ThemeProvider,
   Tooltip,
-  Typography
+  Typography,
+  createTheme
 } from '@mui/material';
-import SettingsIcon from '@mui/icons-material/Settings';
-import ModioCogBlue from '/src/assets/modio-cog-blue.svg?react';
+
 import {
   BookmarkAdded,
+  BookmarkRemove,
   BrowserUpdated,
   Cached,
   CalendarMonth,
   CloudSync,
-  Deselect,
   ErrorOutline,
-  Flaky,
   InstallDesktop,
+  Public,
   RemoveCircleOutline,
   Save,
-  SelectAll,
   SortByAlpha
 } from '@mui/icons-material';
 import { ISortByObjectSorter, sort } from 'fast-sort';
-import { NewModCard } from './components/NewModCard';
+import ModSearchFilterSort from './components/ModSearchFilterSort';
+import ModSelection from './components/ModSelection';
+import Menu from './components/Menu';
+import { FixedSizeList as List } from 'react-window';
+import useResizeObserver from '@react-hook/resize-observer';
+import moment from 'moment';
+import ModioCogBlue from '/src/assets/modio-cog-blue.svg?react';
+import ModBulkActions from './components/ModBulkActions';
 
 let initializing = false;
 
@@ -371,8 +369,6 @@ function App(): JSX.Element {
     ]
   ]);
 
-  const modsFilteredSearchedSorted = getModsFilterSearchSort(mods);
-
   const [selectedMods, setSelectedMods] = useState<Mod[]>([]);
   const handleSelectAll = (): void => {
     setSelectedMods(modsFilteredSearchedSorted);
@@ -393,58 +389,180 @@ function App(): JSX.Element {
     }
   };
 
-  // const mods: Mod[] = [
-  //   {
-  //     id: 3959,
-  //     name: 'PavlovArtists Weapon Skin Pack',
-  //     logo: {
-  //       thumb_320x180: 'https://thumb.modcdn.io/mods/e77c/3467755/crop_320x180/skinmenu.png'
-  //     },
-  //     local_version: 1337,
-  //     local_broken: false,
-  //     subscribed: true,
-  //     platforms: [
-  //       {
-  //         platform: 'windows',
-  //         modfile_live: 1338
-  //       }
-  //     ],
-  //     modfile: {
-  //       filesize: 1337,
-  //       download: { binary_url: '' },
-  //       filehash: { md5: '1337' },
-  //       filename: '1337.zip'
-  //     },
-  //     description_plaintext: 'This is a test mod',
-  //     dependencies: true,
-  //     dependency_mod_ids: []
-  //   },
-  //   {
-  //     id: 39123,
-  //     name: 'PavlovArtists Weapon Skin Pack',
-  //     logo: {
-  //       thumb_320x180: 'https://thumb.modcdn.io/mods/e77c/3467755/crop_320x180/skinmenu.png'
-  //     },
-  //     local_version: 0,
-  //     local_broken: false,
-  //     subscribed: false,
-  //     platforms: [
-  //       {
-  //         platform: 'windows',
-  //         modfile_live: 1338
-  //       }
-  //     ],
-  //     modfile: {
-  //       filesize: 1337,
-  //       download: { binary_url: '' },
-  //       filehash: { md5: '1337' },
-  //       filename: '1337.zip'
-  //     },
-  //     description_plaintext: 'This is a test mod',
-  //     dependencies: true,
-  //     dependency_mod_ids: []
-  //   }
-  // ];
+  const [listHeight, setListHeight] = useState(0);
+  const containerRef = useRef(null);
+
+  useResizeObserver(containerRef, (entry) => {
+    setListHeight(entry.contentRect.height);
+  });
+
+  const modsFilteredSearchedSorted = getModsFilterSearchSort(mods);
+
+  const row = ({ index, style }): JSX.Element => {
+    const mod = modsFilteredSearchedSorted[index];
+    return (
+      <Box style={style} sx={{ width: '100%' }}>
+        <Stack direction="row" spacing={1}>
+          <Box>
+            <Checkbox
+              checked={selectedMods.find((m) => m.id === mod.id) !== undefined}
+              onChange={() => handleSelectMod(mod)}
+            />
+          </Box>
+          <Paper sx={{ width: '100%', padding: 1 }} elevation={5}>
+            <Stack direction="column">
+              <Stack direction="row">
+                <Typography variant="h6" gutterBottom>
+                  {mod.name}
+                </Typography>
+              </Stack>
+              <Stack direction="row" alignItems="start" spacing={1} sx={{ paddingBottom: 1 }}>
+                <Chip
+                  label="Installed"
+                  color="success"
+                  disabled={mod.local_version === 0}
+                  size="small"
+                />
+                <Chip label="Subscribed" color="success" disabled={!mod.subscribed} size="small" />
+                <Chip
+                  label="Broken"
+                  color={mod.local_broken ? 'error' : 'success'}
+                  disabled={!mod.local_broken}
+                  size="small"
+                />
+                <Chip
+                  label="Update available"
+                  color={
+                    mod.local_version !=
+                    mod.platforms.find((p) => p.platform === 'windows')?.modfile_live
+                      ? 'warning'
+                      : 'default'
+                  }
+                  disabled={
+                    mod.local_version ===
+                    mod.platforms.find((p) => p.platform === 'windows')?.modfile_live
+                  }
+                  size="small"
+                />
+              </Stack>
+            </Stack>
+
+            <Grid container spacing={1} sx={{ width: '100%' }}>
+              <Grid item xs="auto">
+                <img src={mod.logo.thumb_320x180} loading="lazy" alt={mod.name} />
+              </Grid>
+              <Grid item xs>
+                <Tooltip title="Open Mod.io page">
+                  <Button
+                    onClick={() => {
+                      window.electron.ipcRenderer.send('open-external', mod.profile_url);
+                    }}
+                  >
+                    <ModioCogBlue width={24} height={24} />
+                  </Button>
+                </Tooltip>
+                <Tooltip title={`Open mod homepage ${mod.homepage_url ?? ''}`}>
+                  <span>
+                    <Button
+                      onClick={() => {
+                        window.electron.ipcRenderer.send('open-external', mod.homepage_url);
+                      }}
+                      disabled={!mod.homepage_url}
+                    >
+                      <Public />
+                    </Button>
+                  </span>
+                </Tooltip>
+                <CardHeader
+                  title={
+                    <Tooltip title="Open Mod.io profile page">
+                      <Button
+                        variant="text"
+                        onClick={() => {
+                          window.electron.ipcRenderer.send(
+                            'open-external',
+                            mod.submitted_by.profile_url
+                          );
+                        }}
+                      >
+                        {mod.submitted_by.username}
+                      </Button>
+                    </Tooltip>
+                  }
+                  avatar={
+                    <Avatar
+                      sx={{ width: 24, height: 24 }}
+                      src={mod.submitted_by.avatar.thumb_50x50}
+                      alt={mod.submitted_by.username}
+                    />
+                  }
+                />
+                <CardHeader
+                  title={
+                    <Tooltip title={new Date(mod.date_updated * 1000).toLocaleString()}>
+                      <Typography>
+                        {((text: string): string => {
+                          return text.charAt(0).toUpperCase() + text.slice(1);
+                        })(moment(new Date(mod.date_updated * 1000)).fromNow())}
+                      </Typography>
+                    </Tooltip>
+                  }
+                  avatar={<CalendarMonth />}
+                />
+              </Grid>
+              <Grid item xs="auto">
+                <Box sx={{ minWidth: 160, maxWidth: 250 }}>
+                  <Button
+                    startIcon={mod.subscribed ? <BookmarkRemove /> : <BookmarkAdded />}
+                    color={mod.subscribed ? 'inherit' : 'primary'}
+                    variant={mod.subscribed ? 'outlined' : 'contained'}
+                    sx={{ width: '100%' }}
+                  >
+                    {mod.subscribed ? 'Unsubscribe' : 'Subscribe'}
+                  </Button>
+                  <Divider sx={{ paddingY: 1 }} />
+                  <ButtonGroup orientation="vertical" sx={{ width: '100%' }}>
+                    {mod.local_version === 0 ? (
+                      <Button variant="outlined" color="primary" startIcon={<InstallDesktop />}>
+                        Install
+                      </Button>
+                    ) : mod.local_version ==
+                      mod.platforms.find((p) => p.platform === 'windows')?.modfile_live ? (
+                      <Button variant="outlined" color="warning" startIcon={<CloudSync />}>
+                        Reinstall
+                      </Button>
+                    ) : (
+                      <Button variant="outlined" color="success" startIcon={<BrowserUpdated />}>
+                        Update
+                      </Button>
+                    )}
+                  </ButtonGroup>
+                  <Divider sx={{ paddingY: 1 }} />
+                  <Button
+                    variant="outlined"
+                    color="primary"
+                    sx={{ width: '100%' }}
+                    startIcon={<Cached />}
+                  >
+                    Refresh metadata
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    color="error"
+                    disabled={mod.local_version === 0}
+                    sx={{ width: '100%' }}
+                    startIcon={<RemoveCircleOutline />}
+                  >
+                    Uninstall
+                  </Button>
+                </Box>
+              </Grid>
+            </Grid>
+          </Paper>
+        </Stack>
+      </Box>
+    );
+  };
 
   return (
     <>
@@ -489,175 +607,72 @@ function App(): JSX.Element {
             }
           }}
         />
-        <Stack direction="row" spacing={2}>
-          <Box>
-            <Toolbar>
-              <SvgIcon sx={{ width: 96, height: 120 }}>
-                <ModioCogBlue width={24} height={24} />
-              </SvgIcon>
-              <Typography variant="h6">Mod Manager</Typography>
-            </Toolbar>
-            <Divider />
-            <List>
-              <ListItem disablePadding>
-                <ListItemButton>
-                  <ListItemIcon>
-                    <Avatar
-                      sx={{ width: 48, height: 48 }}
-                      alt="Pavlov VR"
-                      src="https://thumb.modcdn.io/games/806d/3959/crop_64x64/icon.png"
-                    />
-                  </ListItemIcon>
-                  <ListItemText primary="Pavlov VR" />
-                </ListItemButton>
-              </ListItem>
-              <ListItem disablePadding>
-                <ListItemButton>
-                  <ListItemIcon>
-                    <SettingsIcon sx={{ width: 48, height: 48 }} />
-                  </ListItemIcon>
-                  <ListItemText primary="Settings" />
-                </ListItemButton>
-              </ListItem>
-            </List>
+
+        <Box sx={{ display: 'flex', height: '100vh' }}>
+          <Menu />
+          <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', height: '100vh' }}>
+            <Box sx={{ padding: 1 }}>
+              <ModSearchFilterSort
+                search={search}
+                handleSearch={handleSearch}
+                filters={filters}
+                handleFilters={handleFilters}
+                sortList={sortList}
+                handleSort={handleSort}
+              />
+              <Divider sx={{ marginY: 1 }} />
+              <ModSelection
+                handleSelectAll={handleSelectAll}
+                handleDeselectAll={handleDeselectAll}
+                handleInvertSelection={handleInvertSelection}
+              />
+              <ModBulkActions selectedMods={selectedMods} />
+            </Box>
+            <Box sx={{ flexGrow: 1, overflow: 'auto' }} ref={containerRef}>
+              <List
+                height={listHeight - 20} // Adjust for padding or margins if necessary
+                itemCount={modsFilteredSearchedSorted.length}
+                itemSize={280}
+                width="100%"
+              >
+                {row}
+              </List>
+            </Box>
           </Box>
+        </Box>
+        {/* 
+        <Stack direction="row" spacing={2}>
+          <Menu />
 
           <Box sx={{ padding: 1, width: '100%' }}>
             <Box sx={{ width: '100%' }}>
-              <TextField
-                variant="outlined"
-                label="Search"
-                fullWidth
-                onChange={handleSearch}
-                value={search}
+              <ModSearchFilterSort
+                search={search}
+                handleSearch={handleSearch}
+                filters={filters}
+                handleFilters={handleFilters}
+                sortList={sortList}
+                handleSort={handleSort}
               />
-              <ToggleButtonGroup fullWidth value={filters} onChange={handleFilters}>
-                <Tooltip title="Filter subscribed">
-                  <ToggleButton value="subscribed">
-                    <BookmarkAdded fontSize="small" sx={{ mr: 1 }} /> Subscribed
-                  </ToggleButton>
-                </Tooltip>
-                <Tooltip title="Filter installed">
-                  <ToggleButton value="installed">
-                    <Save fontSize="small" sx={{ mr: 1 }} />
-                    Installed
-                  </ToggleButton>
-                </Tooltip>
-                <Tooltip title="Filter update required">
-                  <ToggleButton value="update">
-                    <BrowserUpdated fontSize="small" sx={{ mr: 1 }} />
-                    Update required
-                  </ToggleButton>
-                </Tooltip>
-                <Tooltip title="Filter broken">
-                  <ToggleButton value="broken">
-                    <ErrorOutline fontSize="small" sx={{ mr: 1 }} />
-                    Broken
-                  </ToggleButton>
-                </Tooltip>
-                <Tooltip title="Filter selected">
-                  <ToggleButton value="selected">
-                    <SelectAll fontSize="small" sx={{ mr: 1 }} />
-                    Selected
-                  </ToggleButton>
-                </Tooltip>
-              </ToggleButtonGroup>
-              <ToggleButtonGroup fullWidth value={sortList} onChange={handleSort}>
-                <Tooltip title="Sort by name">
-                  <ToggleButton value="a-z">
-                    <SortByAlpha fontSize="small" sx={{ mr: 1 }} />
-                  </ToggleButton>
-                </Tooltip>
-                <Tooltip title="Sort by last updated">
-                  <ToggleButton value="date">
-                    <CalendarMonth fontSize="small" sx={{ mr: 1 }} />
-                  </ToggleButton>
-                </Tooltip>
-                <Tooltip title="Sort by subscribed">
-                  <ToggleButton value="subscribed">
-                    <BookmarkAdded fontSize="small" sx={{ mr: 1 }} />
-                  </ToggleButton>
-                </Tooltip>
-                <Tooltip title="Sort by installed">
-                  <ToggleButton value="installed">
-                    <Save fontSize="small" sx={{ mr: 1 }} />
-                  </ToggleButton>
-                </Tooltip>
-                <Tooltip title="Sort by update required">
-                  <ToggleButton value="update">
-                    <BrowserUpdated fontSize="small" sx={{ mr: 1 }} />
-                  </ToggleButton>
-                </Tooltip>
-                <Tooltip title="Sort by broken">
-                  <ToggleButton value="broken">
-                    <ErrorOutline fontSize="small" sx={{ mr: 1 }} />
-                  </ToggleButton>
-                </Tooltip>
-              </ToggleButtonGroup>
               <Divider sx={{ marginY: 1 }} />
-              <ButtonGroup fullWidth>
-                <Tooltip title="Select all">
-                  <Button variant="outlined" startIcon={<SelectAll />} onClick={handleSelectAll}>
-                    Select all
-                  </Button>
-                </Tooltip>
-                <Tooltip title="Deselect all">
-                  <Button variant="outlined" startIcon={<Deselect />} onClick={handleDeselectAll}>
-                    Deselect all
-                  </Button>
-                </Tooltip>
-                <Tooltip title="Invert selection">
-                  <Button variant="outlined" startIcon={<Flaky />} onClick={handleInvertSelection}>
-                    Invert selection
-                  </Button>
-                </Tooltip>
-              </ButtonGroup>
-              <ButtonGroup fullWidth>
-                <Tooltip title="Install selected mods">
-                  <Button
-                    variant="outlined"
-                    startIcon={<InstallDesktop />}
-                    disabled={selectedMods.length == 0}
-                    color="success"
-                  >
-                    Install
-                  </Button>
-                </Tooltip>
-                <Tooltip title="Update or reinstall selected mods">
-                  <Button
-                    variant="outlined"
-                    startIcon={<CloudSync />}
-                    disabled={selectedMods.length == 0}
-                    color="success"
-                  >
-                    Update
-                  </Button>
-                </Tooltip>
-                <Tooltip title="Refresh metadata of selected mods">
-                  <Button
-                    variant="outlined"
-                    startIcon={<Cached />}
-                    disabled={selectedMods.length == 0}
-                  >
-                    Refresh metadata
-                  </Button>
-                </Tooltip>
-                <Tooltip title="Uninstall selected mods">
-                  <Button
-                    variant="outlined"
-                    startIcon={<RemoveCircleOutline />}
-                    disabled={selectedMods.length == 0}
-                    color="error"
-                  >
-                    Uninstall
-                  </Button>
-                </Tooltip>
-              </ButtonGroup>
+              <ModSearchFilterSort
+                search={search}
+                handleSearch={handleSearch}
+                filters={filters}
+                handleFilters={handleFilters}
+                sortList={sortList}
+                handleSort={handleSort}
+              />
+              <ModSelection
+                handleSelectAll={handleSelectAll}
+                handleDeselectAll={handleDeselectAll}
+                handleInvertSelection={handleInvertSelection}
+              />
             </Box>
             <Box sx={{ overflow: 'auto', maxHeight: '70vh' }}>
               <Stack direction="column" spacing={1} useFlexGap margin={1}>
                 {modsFilteredSearchedSorted.map((mod) => (
-                  <NewModCard
+                  <ModCard
                     key={mod.id}
                     mod={mod}
                     selected={selectedMods.find((m) => m.id === mod.id) !== undefined}
@@ -667,24 +682,7 @@ function App(): JSX.Element {
               </Stack>
             </Box>
           </Box>
-        </Stack>
-        {/* <Container sx={{ bgcolor: '#003366' }}> */}
-
-        {/* <Progress
-            batchItemActual={batchItemActual}
-            batchList={batchList}
-            progressAbortController={progressAbortController}
-          />
-          {mods.length === 0 ? null : (
-            <>
-              <Typography variant="h4" sx={{ color: 'white', textAlign: 'center', padding: 2 }}>
-                We have {mods.length} mods
-              </Typography>
-              <ModListComponent mods={mods} downloadSingle={downloadSingle} />
-            </>
-          )}
-          ; */}
-        {/* </Container> */}
+        </Stack> */}
       </ThemeProvider>
     </>
   );
