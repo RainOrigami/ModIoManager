@@ -1,6 +1,7 @@
 /// <reference types="vite-plugin-svgr/client" />
 
-import { useEffect, useRef, useState } from 'react';
+//#region Imports
+import { useEffect, useMemo, useRef, useState } from 'react';
 import ModList from './ModList';
 import LocalMod from '@preload/LocalMod';
 import { Mod } from './models/mod-io/Mod';
@@ -51,7 +52,71 @@ import useResizeObserver from '@react-hook/resize-observer';
 import moment from 'moment';
 import ModioCogBlue from '/src/assets/modio-cog-blue.svg?react';
 import ModBulkActions from './components/ModBulkActions';
+//#endregion
 
+//#region Types and consts
+interface Sortable {
+  name: string;
+  icon: JSX.Element;
+  sort: ISortByObjectSorter<Mod>;
+}
+
+const sortables: Map<string, Sortable> = new Map<string, Sortable>([
+  [
+    'a-z',
+    {
+      name: 'Alphabetically',
+      icon: <SortByAlpha fontSize="small" />,
+      sort: { asc: (mod) => mod.name }
+    }
+  ],
+  [
+    'date',
+    {
+      name: 'Last updated',
+      icon: <CalendarMonth fontSize="small" />,
+      sort: { desc: (mod) => mod.date_updated }
+    }
+  ],
+  [
+    'subscribed',
+    {
+      name: 'Subscribed',
+      icon: <BookmarkAdded fontSize="small" />,
+      sort: { desc: (mod) => mod.subscribed }
+    }
+  ],
+  [
+    'installed',
+    {
+      name: 'Installed',
+      icon: <Save fontSize="small" />,
+      sort: { desc: (mod) => mod.local_version ?? 0 > 0 }
+    }
+  ],
+  [
+    'update',
+    {
+      name: 'Update required',
+      icon: <BrowserUpdated fontSize="small" />,
+      sort: {
+        desc: (mod) =>
+          mod.local_version !== mod.platforms.find((p) => p.platform === 'windows')?.modfile_live
+      }
+    }
+  ],
+  [
+    'broken',
+    {
+      name: 'Broken',
+      icon: <ErrorOutline fontSize="small" />,
+      sort: { desc: (mod) => mod.local_broken }
+    }
+  ]
+]);
+//#endregion
+
+//#region Initialization
 let initializing = false;
 
 async function init(
@@ -170,15 +235,25 @@ async function init(
 
     setBatchItem(null);
   } catch (e) {
+    let errorMessage = 'Unknown error';
+    if (e instanceof Error) {
+      errorMessage = e.message;
+    } else if (typeof e === 'string') {
+      errorMessage = e;
+    }
     setBatchItem({
       batchSize: 0,
       currentIndex: 0,
-      message: 'Error during initialization',
+      message: 'Error during initialization: ' + errorMessage,
       percent: 100
     });
     console.error(e);
+    setTimeout(() => {
+      setBatchItem(null);
+    }, 5000);
   }
 }
+//#endregion
 
 // async function downloadSingle(mod: Mod): Promise<void> {
 // const dependencyMods: Mod[] = mod.dependencies
@@ -189,78 +264,87 @@ async function init(
 // window.electron.ipcRenderer.send('download-mod', [mod, ...dependencyMods]);
 // }
 
-function App(): JSX.Element {
-  const [mods, setMods] = useState<Map<number, Mod>>(new Map<number, Mod>());
+//#region Filter, search and sort
+const getModsFilterSearchSort = (
+  modsMap: Map<number, Mod>,
+  search: string,
+  filters: string[],
+  sortList: string[],
+  selectedMods: Mod[]
+): Mod[] => {
+  const startTime = performance.now();
+  console.log('Filtering, searching and sorting mods...');
+  const mods: Mod[] = [];
+  modsMap.forEach((mod: Mod) => {
+    if (filters.includes('subscribed') && !mod.subscribed) {
+      return;
+    }
+    if (filters.includes('installed') && mod.local_version === 0) {
+      return;
+    }
+    if (
+      filters.includes('update') &&
+      mod.local_version === mod.platforms.find((p) => p.platform === 'windows')?.modfile_live
+    ) {
+      return;
+    }
+    if (filters.includes('broken') && !mod.local_broken) {
+      return;
+    }
+    if (filters.includes('selected') && !selectedMods.find((m) => m.id === mod.id)) {
+      return;
+    }
 
+    if (
+      search.length > 0 &&
+      !mod.name.toLowerCase().includes(search.toLowerCase()) &&
+      !mod.description_plaintext.toLowerCase().includes(search.toLowerCase())
+    ) {
+      return;
+    }
+
+    mods.push(mod);
+  });
+
+  const sortBy: ISortByObjectSorter<Mod>[] = sortList.map((sort) => sortables.get(sort)!.sort);
+  const sorted = sort(mods).by(sortBy);
+
+  console.log('Filtering, searching and sorting mods took:', performance.now() - startTime, 'ms');
+  return sorted;
+};
+//#endregion
+
+function App(): JSX.Element {
   const progressAbortController = new AbortController();
 
-  const getModsFilterSearchSort = (modsMap: Map<number, Mod>): Mod[] => {
-    const startTime = performance.now();
-    console.log('Filtering, searching and sorting mods...');
-    const mods: Mod[] = [];
-    modsMap.forEach((mod: Mod) => {
-      if (filters.includes('subscribed') && !mod.subscribed) {
-        return;
-      }
-      if (filters.includes('installed') && mod.local_version === 0) {
-        return;
-      }
-      if (
-        filters.includes('update') &&
-        mod.local_version === mod.platforms.find((p) => p.platform === 'windows')?.modfile_live
-      ) {
-        return;
-      }
-      if (filters.includes('broken') && !mod.local_broken) {
-        return;
-      }
-      if (filters.includes('selected') && !selectedMods.find((m) => m.id === mod.id)) {
-        return;
-      }
-
-      if (
-        search.length > 0 &&
-        !mod.name.toLowerCase().includes(search.toLowerCase()) &&
-        !mod.description_plaintext.toLowerCase().includes(search.toLowerCase())
-      ) {
-        return;
-      }
-
-      mods.push(mod);
-    });
-
-    const sortBy: ISortByObjectSorter<Mod>[] = sortList.map((sort) => sortables.get(sort)!.sort);
-    const sorted = sort(mods).by(sortBy);
-
-    console.log('Filtering, searching and sorting mods took:', performance.now() - startTime, 'ms');
-    return sorted;
-  };
-
-  useEffect(() => {
-    init(setMods, setBatchItemActual, progressAbortController.signal);
-  }, []);
-
+  //#region States
+  const [mods, setMods] = useState<Map<number, Mod>>(new Map<number, Mod>());
+  const [batchList, setBatchList] = useState<BatchItem[]>([]);
+  const [search, setSearch] = useState<string>('');
+  const [filters, setFilters] = useState<string[]>(['update']);
+  const [selectedMods, setSelectedMods] = useState<Mod[]>([]);
+  const [listHeight, setListHeight] = useState(0);
+  const [sortList, setSortList] = useState<string[]>([
+    'update',
+    'broken',
+    'subscribed',
+    'installed',
+    'date'
+  ]);
   const [batchItem, setBatchItem] = useState<BatchItem | null>({
     batchSize: 0,
     currentIndex: 0,
     message: 'Startup...',
     percent: 0
   });
+  //#endregion
 
-  let batchItemActual = batchItem;
-  const [batchList, setBatchList] = useState<BatchItem[]>([]);
-  const batchListActual = batchList;
-
-  function setBatchItemActual(batchItem: BatchItem | null): void {
-    if (batchItem !== null) {
-      batchListActual.push(batchItem);
-    }
-
-    setBatchItem(batchItem);
-    setBatchList(batchListActual);
-  }
-
+  //#region Effects
   useEffect(() => {
+    // Initial loading
+    init(setMods, setBatchItemActual, progressAbortController.signal);
+
+    // Register IPC listeners for backend progress updates
     window.electron.ipcRenderer.on('start-batch-element', (_, args) => {
       batchItemActual = args;
       setBatchItemActual(args);
@@ -274,102 +358,54 @@ function App(): JSX.Element {
       setBatchItemActual(null);
     });
   }, []);
+  //#endregion
 
-  const theme = createTheme({
-    palette: {
-      mode: 'dark'
-    }
+  //#region Shitty resize crap
+  const containerRef = useRef(null);
+  useResizeObserver(containerRef, (entry) => {
+    setListHeight(entry.contentRect.height);
   });
+  //#endregion
 
-  // new stuff
+  //#region Shitty reference crap
+  let batchItemActual = batchItem;
+  const batchListActual = batchList;
+  //#endregion
 
-  const [search, setSearch] = useState<string>('');
+  //#region State handlers
+  function setBatchItemActual(batchItem: BatchItem | null): void {
+    if (batchItem !== null) {
+      batchListActual.push(batchItem);
+    }
+
+    setBatchItem(batchItem);
+    setBatchList(batchListActual);
+  }
+
   const handleSearch = (event: React.ChangeEvent<HTMLInputElement>): void => {
     setSearch(event.target.value);
   };
 
-  const [filters, setFilters] = useState<string[]>(['update']);
   const handleFilters = (_: React.MouseEvent<HTMLElement>, newFilters: string[]): void => {
     setFilters(newFilters);
   };
 
-  const [sortList, setSortList] = useState<string[]>([
-    'update',
-    'broken',
-    'subscribed',
-    'installed',
-    'date'
-  ]);
   const handleSort = (_: React.MouseEvent<HTMLElement>, newSort: string[]): void => {
     if (sortList.includes('a-z') && newSort.includes('date')) {
       newSort = newSort.filter((s) => s !== 'a-z');
     } else if (sortList.includes('date') && newSort.includes('a-z')) {
       newSort = newSort.filter((s) => s !== 'date');
     }
+    if (newSort.includes('a-z') && newSort[newSort.length - 1] !== 'a-z') {
+      newSort = newSort.filter((s) => s !== 'a-z');
+      newSort.push('a-z');
+    } else if (newSort.includes('date') && newSort[newSort.length - 1] !== 'date') {
+      newSort = newSort.filter((s) => s !== 'date');
+      newSort.push('date');
+    }
     setSortList(newSort);
   };
 
-  interface Sortable {
-    name: string;
-    icon: JSX.Element;
-    sort: ISortByObjectSorter<Mod>;
-  }
-
-  const sortables: Map<string, Sortable> = new Map<string, Sortable>([
-    [
-      'a-z',
-      {
-        name: 'Alphabetically',
-        icon: <SortByAlpha fontSize="small" />,
-        sort: { asc: (mod) => mod.name }
-      }
-    ],
-    [
-      'date',
-      {
-        name: 'Last updated',
-        icon: <CalendarMonth fontSize="small" />,
-        sort: { desc: (mod) => mod.date_updated }
-      }
-    ],
-    [
-      'subscribed',
-      {
-        name: 'Subscribed',
-        icon: <BookmarkAdded fontSize="small" />,
-        sort: { desc: (mod) => mod.subscribed }
-      }
-    ],
-    [
-      'installed',
-      {
-        name: 'Installed',
-        icon: <Save fontSize="small" />,
-        sort: { desc: (mod) => mod.local_version ?? 0 > 0 }
-      }
-    ],
-    [
-      'update',
-      {
-        name: 'Update required',
-        icon: <BrowserUpdated fontSize="small" />,
-        sort: {
-          desc: (mod) =>
-            mod.local_version !== mod.platforms.find((p) => p.platform === 'windows')?.modfile_live
-        }
-      }
-    ],
-    [
-      'broken',
-      {
-        name: 'Broken',
-        icon: <ErrorOutline fontSize="small" />,
-        sort: { desc: (mod) => mod.local_broken }
-      }
-    ]
-  ]);
-
-  const [selectedMods, setSelectedMods] = useState<Mod[]>([]);
   const handleSelectAll = (): void => {
     setSelectedMods(modsFilteredSearchedSorted);
   };
@@ -388,16 +424,24 @@ function App(): JSX.Element {
       setSelectedMods([...selectedMods, mod]);
     }
   };
+  //#endregion
 
-  const [listHeight, setListHeight] = useState(0);
-  const containerRef = useRef(null);
-
-  useResizeObserver(containerRef, (entry) => {
-    setListHeight(entry.contentRect.height);
+  //#region Theme
+  const theme = createTheme({
+    palette: {
+      mode: 'dark'
+    }
   });
+  //#endregion
 
-  const modsFilteredSearchedSorted = getModsFilterSearchSort(mods);
+  //#region Memoization
+  const modsFilteredSearchedSorted = useMemo(
+    () => getModsFilterSearchSort(mods, search, filters, sortList, selectedMods),
+    [mods, search, filters, sortList, selectedMods]
+  );
+  //#endregion
 
+  //#region ModCard crap that should be a component but react-window list is ass
   const row = ({ index, style }): JSX.Element => {
     const mod = modsFilteredSearchedSorted[index];
     return (
@@ -563,7 +607,9 @@ function App(): JSX.Element {
       </Box>
     );
   };
+  //#endregion
 
+  //#region The actual app all crammed into one return because fucking shit
   return (
     <>
       <ThemeProvider theme={theme}>
@@ -630,10 +676,10 @@ function App(): JSX.Element {
             </Box>
             <Box sx={{ flexGrow: 1, overflow: 'auto' }} ref={containerRef}>
               <List
-                height={listHeight - 20} // Adjust for padding or margins if necessary
                 itemCount={modsFilteredSearchedSorted.length}
                 itemSize={280}
                 width="100%"
+                height={listHeight}
               >
                 {row}
               </List>
@@ -643,6 +689,7 @@ function App(): JSX.Element {
       </ThemeProvider>
     </>
   );
+  //#endregion
 }
 
 export default App;
