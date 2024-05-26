@@ -640,49 +640,6 @@ function App(): JSX.Element {
             </Box>
           </Box>
         </Box>
-        {/* 
-        <Stack direction="row" spacing={2}>
-          <Menu />
-
-          <Box sx={{ padding: 1, width: '100%' }}>
-            <Box sx={{ width: '100%' }}>
-              <ModSearchFilterSort
-                search={search}
-                handleSearch={handleSearch}
-                filters={filters}
-                handleFilters={handleFilters}
-                sortList={sortList}
-                handleSort={handleSort}
-              />
-              <Divider sx={{ marginY: 1 }} />
-              <ModSearchFilterSort
-                search={search}
-                handleSearch={handleSearch}
-                filters={filters}
-                handleFilters={handleFilters}
-                sortList={sortList}
-                handleSort={handleSort}
-              />
-              <ModSelection
-                handleSelectAll={handleSelectAll}
-                handleDeselectAll={handleDeselectAll}
-                handleInvertSelection={handleInvertSelection}
-              />
-            </Box>
-            <Box sx={{ overflow: 'auto', maxHeight: '70vh' }}>
-              <Stack direction="column" spacing={1} useFlexGap margin={1}>
-                {modsFilteredSearchedSorted.map((mod) => (
-                  <ModCard
-                    key={mod.id}
-                    mod={mod}
-                    selected={selectedMods.find((m) => m.id === mod.id) !== undefined}
-                    onSelect={handleSelectMod}
-                  />
-                ))}
-              </Stack>
-            </Box>
-          </Box>
-        </Stack> */}
       </ThemeProvider>
     </>
   );
