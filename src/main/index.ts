@@ -1,5 +1,5 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import icon from '../../resources/modio-cog-black.png?asset';
 import { Config } from '../preload/Config';
@@ -60,7 +60,7 @@ app.whenReady().then(async () => {
     optimizer.watchWindowShortcuts(window);
   });
 
-  let configPath = join(__dirname, 'config.json');
+  let configPath = resolve('./config.json');
   // when in development, the config file is in a safe location
   if (is.dev) {
     configPath = join(process.env.APPDATA!, 'mod-io-manager/config.json');
